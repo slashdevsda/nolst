@@ -27,6 +27,7 @@ class Sexpr(Node):
         for stmt in self.stmts:
             stmt.compile(ctx)
 
+
 class Do(Node):
     """ A list of unrelated statements
     """
@@ -37,6 +38,10 @@ class Do(Node):
         for stmt in self.stmts:
             stmt.compile(ctx)
             #ctx.emit(bytecode.DISCARD_TOP)
+
+        #for i in range(len(self.stmts) - 1):
+
+
 
 class Stmt(Node):
     """ A single statement
@@ -72,6 +77,19 @@ class ConstantString(Node):
         w = W_StringObject(self.strval)
         ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(w))
 
+class UnevaluatedSymbol(Node):
+    """ Represent anything unevaluated
+    """
+    def __init__(self, strval):
+        self.strval = strval
+
+    def compile(self, ctx):
+        # convert the integer to W_IntObject already here
+        from nolst.interpreter import W_SymbolObject
+        w = W_SymbolObject(self.strval)
+        ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(w))
+
+
 class ConstantFloat(Node):
     """ Represent a constant
     """
@@ -96,6 +114,48 @@ class BinOp(Node):
         self.left.compile(ctx)
         self.right.compile(ctx)
         ctx.emit(bytecode.BINOP[self.op])
+
+class BaseList(Node):
+    """ Base class for list related
+    """
+    def __init__(self, content):
+        self.content = content
+
+    def compile(self, ctx):
+        from nolst.interpreter import W_ListObject
+
+        obj = W_ListObject(self.content)
+        ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(obj))
+
+class QuotedExpr(BaseList):
+
+    """ Represent a quoted expr - kinda like a special string
+    """
+    def __init__(self, content):
+        self.content = content
+
+
+
+    def compile(self, ctx):
+        # convert the integer to W_IntObject already here
+        from nolst.interpreter import W_QuotedListObject
+        obj = W_QuotedListObject(self.content)
+        ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(obj))
+
+    def compile(self, ctx):
+        from nolst.interpreter import W_QuotedListObject, W_SymbolObject
+        obj = W_QuotedListObject(self.content)
+        ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(obj))
+        for item in self.content:
+            #item.compile(ctx)
+            pass
+            # w = W_SymbolObject(item.strval)
+            # ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(w))
+
+
+class InlineList(BaseList):
+    pass
+
 
 class Variable(Node):
     """ Variable reference
@@ -165,7 +225,8 @@ class Transformer(object):
         elif node.children[0].symbol == 'SYMBOL':
             return Variable(node.children[0].token.source)
         elif node.children[0].symbol == 'STRING':
-            return ConstantString(node.children[0].token.source[1:-1])
+            #assert len(node.children[0].token.source) > 2
+            return ConstantString(node.children[0].token.source.rstrip('"'))
         raise NotImplementedError()
 
     def dispatch(self, node):
@@ -173,8 +234,46 @@ class Transformer(object):
             return self.visit_atom(node)
         elif node.symbol == 'sexpr':
             return self.visit_sexpr(node)
+        elif node.symbol == 'qsexpr':
+            return self.visit_qsexpr(node)
 
         raise NotImplementedError()
+
+
+    def visit_qsexpr(self, node):
+        '''
+        quoted lisp statement. would store bytecode as string
+        '''
+
+        #content = self.dispatch(node.children[0])
+        l = []
+        for n in node.children:
+            item = n
+            if item.symbol == 'sexpr':
+                r = self.visit_qsexpr(item)
+                l.append(r)
+            elif item.symbol == 'atom':
+                sub = []
+
+                t = item.children[0].token.name
+                l.append(UnevaluatedSymbol(item.children[0].token.name))
+                # if t == 'SYMBOL':
+                #     l.append(Variable(item.children[0].token.source))
+                # elif t == 'DECIMAL':
+                #     l.append(ConstantInt(int(item.children[0].token.source)))
+                # elif t == 'STRING':
+                #     l.append(ConstantString(item.children[0].token.source))
+
+                # for i in n.children:
+                #     print('~~+~~',self.visit_qsexpr(n))
+                #     sub.append(self.visit_qsexpr(n))
+                #l.append(QuotedExpr())
+            else:
+                raise NotImplementedError(item)
+
+
+        return QuotedExpr(l)
+
 
     def visit_sexpr(self, node):
 
@@ -206,7 +305,8 @@ class Transformer(object):
                         self.dispatch(node.children[1]),
                         self.dispatch(node.children[2]))
                 )
-
+            elif c.children[0].token.source == 'print':
+                expr.append(Print(self.dispatch(node.children[1])))
             #print(c.children[0].token.source)
             #expr.append(c.children[0].token)
 

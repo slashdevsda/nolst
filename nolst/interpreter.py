@@ -17,6 +17,7 @@ from nolst.sourceparser import parse
 from nolst.bytecode import compile_ast
 from nolst import bytecode
 from rpython.rlib import jit
+import os
 
 def printable_loc(pc, code, bc):
     return str(pc) + " " + bytecode.bytecodes_by_value[ord(code[pc])]
@@ -64,13 +65,36 @@ class W_StringObject(W_Root):
     def lt(self, other):
         if not isinstance(other, W_StringObject):
             raise Exception("wrong type")
-        return W_StringObject(self.strval < other.strval)
+        return W_IntObject(self.strval < other.strval)
 
     def is_true(self):
         return True
 
     def str(self):
         return self.strval
+
+class W_SymbolObject(W_Root):
+    '''
+    used for unevaluated stuff
+    '''
+    def __init__(self, strval):
+        assert(isinstance(strval, str))
+        self.strval = strval
+
+    def add(self, other):
+        raise NotImplementedError('Invalid operation')
+
+    def lt(self, other):
+        if not isinstance(other, W_SymbolObject):
+            raise Exception("wrong type")
+        return W_IntObject(self.strval < other.strval)
+
+    def is_true(self):
+        return True
+
+    def str(self):
+        return self.strval
+
 
 
 class W_FloatObject(W_Root):
@@ -91,6 +115,59 @@ class W_FloatObject(W_Root):
     def str(self):
         return str(self.floatval)
 
+class W_ListObject(W_Root):
+    def __init__(self, content):
+        assert(isinstance(content, list))
+        self.content = content
+
+    def add(self, other):
+        if not isinstance(other, W_ListObject):
+            raise Exception("wrong type")
+        return W_ListObject(self.content + other.content)
+
+    def lt(self, other):
+        if not isinstance(other, W_ListObject):
+            raise Exception("wrong type")
+        return W_IntObject(len(self.content) < len(other.content))
+
+    def is_true(self):
+        return True
+
+    def str(self):
+        return '[%s]' %', '.join([str(i) for i in self.content])
+
+
+class W_QuotedListObject(W_Root):
+    '''
+    KInda list, but for quoted code
+    '''
+    def __init__(self, content):
+        assert(isinstance(content, list))
+        self.content = content
+
+    def add(self, other):
+        if not isinstance(other, W_QuotedListObject):
+            raise Exception("wrong type")
+        return W_QuotedListObject(self.content + other.content)
+
+    def lt(self, other):
+        if not isinstance(other, W_QuotedListObject):
+            raise Exception("wrong type")
+        return W_IntObject(len(self.content) < len(other.content))
+
+    def is_true(self):
+        return True
+
+    def str(self):
+        s = '('
+        from nolst.sourceparser import UnevaluatedSymbol, QuotedExpr
+        for item in self.content:
+            if isinstance(item, UnevaluatedSymbol):
+                s += item.strval
+            elif isinstance(item, QuotedExpr):
+                pass
+        s += ')'
+        return '(%s)' %', '.join([str(i) for i in self.content])
 
 
 class Frame(object):
@@ -98,9 +175,28 @@ class Frame(object):
 
     def __init__(self, bc):
         self = jit.hint(self, fresh_virtualizable=True, access_directly=True)
-        self.valuestack = [None] * 3 # safe estimate!
+        self.valuestack = [None] * 10 # safe estimate!
         self.vars = [None] * bc.numvars
         self.valuestack_pos = 0
+
+    def dump_vars(self):
+        b = ''
+        for i, v in enumerate(self.vars):
+            if v:
+                b += '%s: %s\n' %(hex(i), v.str())
+        return b
+
+    def dump_stack(self):
+        b = ''
+
+        for i, _ in enumerate(self.valuestack):
+            if self.valuestack[i]:
+                b += "%s:\t%s" %(hex(i), self.valuestack[i])
+                if i == self.valuestack_pos:
+                    b += ' <---'
+                b += '\n'
+
+        return  b
 
     def push(self, v):
         pos = jit.hint(self.valuestack_pos, promote=True)
@@ -119,7 +215,20 @@ class Frame(object):
 def add(left, right):
     return left + right
 
+# if os.environ.get('NDBG'):
+#             # DEBUG, dump everyting for each opcodes
+#             print(
+#                 'CI: %s(%s)\n=== STACK DUMP ===\n%s'
+#                 %(bytecode.bytecodes_by_value[c], hex(arg), frame.dump_stack())
+#             )
+#             print('=== VARS DUMP ===\n%s' %frame.dump_vars())
+
+
 def execute(frame, bc):
+    '''
+    execute bytecode `bc.code`.
+    `frame` represents the stack
+    '''
     code = bc.code
     pc = 0
     while True:
@@ -128,6 +237,15 @@ def execute(frame, bc):
         c = ord(code[pc])
         arg = ord(code[pc + 1])
         pc += 2
+
+        if os.environ.get('NDBG'):
+            # DEBUG, dump everyting for each opcodes
+            print(
+                'INSTRUCTION: %s(ARG:%s)\n=== STACK DUMP ===\n%s'
+                %(bytecode.bytecodes_by_value[c], hex(arg) if arg else 'NO_ARG', frame.dump_stack())
+            )
+            print('=== VARS DUMP ===\n%s' %frame.dump_vars())
+
         if c == bytecode.LOAD_CONSTANT:
             w_constant = bc.constants[arg]
             frame.push(w_constant)
@@ -139,8 +257,6 @@ def execute(frame, bc):
             right = frame.pop()
             left = frame.pop()
             w_res = left.add(right)
-            print('w_res:', w_res.str())
-
             frame.push(w_res)
         elif c == bytecode.BINARY_LT:
             right = frame.pop()
@@ -155,7 +271,7 @@ def execute(frame, bc):
             driver.can_enter_jit(pc=pc, code=code, bc=bc, frame=frame)
         elif c == bytecode.PRINT:
             item = frame.pop()
-            print item.str()
+            print(item.str())
         elif c == bytecode.ASSIGN:
             frame.vars[arg] = frame.pop()
         elif c == bytecode.LOAD_VAR:
