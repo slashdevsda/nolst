@@ -11,6 +11,7 @@ bytecodes = {
     'RETURN':        0x09,
     'PRINT':         0x10,
     'BINARY_LT':     0x11,
+    'DELETE_VAR':    0x12,
 }
 
 bytecodes_by_value = {v:k for k, v in bytecodes.iteritems()}
@@ -45,7 +46,12 @@ class CompilerContext(object):
         self.data.append(chr(bc))
         self.data.append(chr(arg))
 
-    def create_bytecode(self):
+    def create_bytecode(self, offset=0):
+        if offset != 0:
+            for idx, v in enumerate(self.data):
+                if idx % 2:
+                    self.data[idx] += offset
+
         return ByteCode("".join(self.data), self.constants[:], len(self.names))
 
 class ByteCode(object):
@@ -67,8 +73,8 @@ class ByteCode(object):
             lines.append(bytecodes_by_value[ord(c)] + " " + str(ord(c2)))
         return '\n'.join(lines)
 
-def compile_ast(astnode):
+def compile_ast(astnode, offset=0):
     c = CompilerContext()
     astnode.compile(c)
     c.emit(bytecodes['RETURN'], 0)
-    return c.create_bytecode()
+    return c.create_bytecode(offset=offset)
