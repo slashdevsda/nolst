@@ -23,6 +23,9 @@ def main(argv):
 
     p_count = 0
     content = ""
+    # save context upon sequencial
+    # executions
+    frame = None
 
     while True:
         if interactive:
@@ -47,7 +50,7 @@ def main(argv):
             p_count = 0
 
         if len(content.strip('\n')) and p_count == 0:
-            interpret(content)
+            frame = interpret(content, frame)
             content = ""
     return 0
 
