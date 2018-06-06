@@ -1,4 +1,3 @@
-
 import py
 from rpython.rlib.parsing.ebnfparse import parse_ebnf, make_parse_function
 from nolst import bytecode
@@ -55,9 +54,12 @@ class Lambda(Node):
         #ctx.emit(bytecode.JUMP_IF_FALSE, 2)
         from nolst.interpreter import W_LambdaObject
 
+
+
+
         w = W_LambdaObject(
-            bytecode.compile_ast(self.args),
-            bytecode.compile_ast(self.body)
+            ctx.merge(bytecode.compile_ast(self.args)),
+            ctx.merge(bytecode.compile_ast(self.body))
         )
         ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(w))
         #self.args.compile(ctx)
@@ -258,8 +260,16 @@ class Transformer(object):
             return self.visit_sexpr(node)
         elif node.symbol == 'qsexpr':
             return self.visit_qsexpr(node)
+        elif node.symbol == 'root':
+            return self.visit_root(node)
 
         raise NotImplementedError()
+
+    def visit_root(self, node):
+        '''
+        only used in the root scope
+        '''
+        return Sexpr([self.dispatch(i) for i in node.children])
 
 
     def visit_qsexpr(self, node):
@@ -279,17 +289,6 @@ class Transformer(object):
 
                 t = item.children[0].token.name
                 l.append(UnevaluatedSymbol(item.children[0].token.name))
-                # if t == 'SYMBOL':
-                #     l.append(Variable(item.children[0].token.source))
-                # elif t == 'DECIMAL':
-                #     l.append(ConstantInt(int(item.children[0].token.source)))
-                # elif t == 'STRING':
-                #     l.append(ConstantString(item.children[0].token.source))
-
-                # for i in n.children:
-                #     print('~~+~~',self.visit_qsexpr(n))
-                #     sub.append(self.visit_qsexpr(n))
-                #l.append(QuotedExpr())
             else:
                 raise NotImplementedError(item)
 
@@ -355,7 +354,7 @@ def parse(source):
     #print(parsed)
     #parsed.view()
     transformed = ToAST().transform(parsed)
-    #transformed.view()
+    transformed.view()
 
     t = transformer.visit_main(transformed)
     return t
