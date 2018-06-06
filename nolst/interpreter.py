@@ -1,18 +1,3 @@
-
-"""This file contains both an interpreter and "hints" in the interpreter code
-necessary to construct a Jit.
-
-There are two required hints:
-1. JitDriver.jit_merge_point() at the start of the opcode dispatch loop
-2. JitDriver.can_enter_jit() at the end of loops (where they jump back to the start)
-
-These bounds and the "green" variables effectively mark loops and
-allow the jit to decide if a loop is "hot" and in need of compiling.
-
-Read http://doc.pypy.org/en/latest/jit/pyjitpl5.html for details.
-
-"""
-
 from nolst.sourceparser import parse
 from nolst.bytecode import compile_ast
 from nolst import bytecode
@@ -29,6 +14,8 @@ driver = jit.JitDriver(greens = ['pc', 'code', 'bc'],
 
 class W_Root(object):
     pass
+
+DEBUG = os.environ.get('NDBG')
 
 class W_IntObject(W_Root):
     def __init__(self, intval):
@@ -72,6 +59,29 @@ class W_StringObject(W_Root):
 
     def str(self):
         return self.strval
+
+
+class W_LambdaObject(W_Root):
+    '''
+    used for lambda
+    '''
+    def __init__(self, args, body):
+        #assert(isinstance(strval, str))
+        self.args = args
+        self.body = body
+
+    def add(self, other):
+        raise NotImplementedError('Invalid operation')
+
+    def lt(self, other):
+        raise NotImplementedError('Invalid operation')
+
+    def is_true(self):
+        return True
+
+    def str(self):
+        return str(self.args) + str(self.body) + "\n\t\targs:>\n%s\n\t\tbody>\n%s" %(self.args.dump(), self.body.dump())
+
 
 class W_SymbolObject(W_Root):
     '''
@@ -238,7 +248,7 @@ def execute(frame, bc):
         arg = ord(code[pc + 1])
         pc += 2
 
-        if os.environ.get('NDBG'):
+        if DEBUG:
             # DEBUG, dump everyting for each opcodes
             print(
                 'INSTRUCTION: %s(ARG:%s)\n=== STACK DUMP ===\n%s'
@@ -271,19 +281,30 @@ def execute(frame, bc):
             driver.can_enter_jit(pc=pc, code=code, bc=bc, frame=frame)
         elif c == bytecode.PRINT:
             item = frame.pop()
-            print(item.str())
+            print('(nolst) ' + item.str())
         elif c == bytecode.ASSIGN:
             frame.vars[arg] = frame.pop()
         elif c == bytecode.LOAD_VAR:
             frame.push(frame.vars[arg])
+
+        #elif c == 'bytecode.JUMP':
+        # # takes adress as arg.
+        # # wild.
+
+        #elif c == 'bytecode.LOAD_FUNCTION':
+        # play with pc
+        #elif c == 'bytecode.CALL':
+
+
         else:
             assert False
 
-def interpret(source):
+def interpret(source, frame=None):
     parsed = parse(source)
     bc = compile_ast(parsed)
     print('\n[*] bytecode produced: ')
     print(bc.dump())
-    frame = Frame(bc)
+    if not frame:
+        frame = Frame(bc)
     execute(frame, bc)
     return frame # for tests and later introspection

@@ -37,10 +37,32 @@ class Do(Node):
     def compile(self, ctx):
         for stmt in self.stmts:
             stmt.compile(ctx)
-            #ctx.emit(bytecode.DISCARD_TOP)
+
 
         #for i in range(len(self.stmts) - 1):
 
+
+class Lambda(Node):
+    """ An annonymous function
+    """
+    def __init__(self, args, body):
+        self.args = args
+        self.body = body
+
+    def compile(self, ctx):
+        #for arg in self.args:
+        #    ctx.emit(bytecode.LOAD_VAR, ctx.register_var(self.arg))
+        #ctx.emit(bytecode.JUMP_IF_FALSE, 2)
+        from nolst.interpreter import W_LambdaObject
+
+        w = W_LambdaObject(
+            bytecode.compile_ast(self.args),
+            bytecode.compile_ast(self.body)
+        )
+        ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(w))
+        #self.args.compile(ctx)
+        #self.body.compile(ctx)
+        # ctx.emit(bytecode.RETURN, 0)
 
 
 class Stmt(Node):
@@ -297,6 +319,11 @@ class Transformer(object):
                 expr.append(
                     Do(c)
                 )
+            elif c.children[0].token.source == 'lambda':
+                #c = [self.dispatch(i) for i in node.children[1:]]
+                expr.append(
+                    Lambda(self.dispatch(node.children[1]), self.dispatch(node.children[2]))
+                )
             elif c.children[0].token.source == 'add':
                 # addition
                 expr.append(
@@ -307,6 +334,12 @@ class Transformer(object):
                 )
             elif c.children[0].token.source == 'print':
                 expr.append(Print(self.dispatch(node.children[1])))
+            else:
+                cc = [self.dispatch(i) for i in node.children]
+                expr.append(
+                    Do(cc)
+                )
+
             #print(c.children[0].token.source)
             #expr.append(c.children[0].token)
 
