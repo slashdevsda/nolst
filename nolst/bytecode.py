@@ -5,6 +5,9 @@ bytecodes = {
     'DISCARD_TOP':   0x03,
     'JUMP_IF_FALSE': 0x04,
     'JUMP_BACKWARD': 0x05,
+
+    # relative jump
+    'RJUMP':         0x13,
     'BINARY_ADD':    0x06,
     'BINARY_SUB':    0x07,
     'BINARY_EQ':     0x08,
@@ -34,6 +37,17 @@ class CompilerContext(object):
         self.constants.append(v)
         return len(self.constants) - 1
 
+    def merge(self, cc):
+        '''
+        merge with another context object.
+        '''
+        print(cc)
+        assert isinstance(cc, CompilerContext)
+        a = len(self.data)
+        self.data += cc.data
+        return a
+
+
     def register_var(self, name):
         try:
             return self.names_to_numbers[name]
@@ -46,6 +60,10 @@ class CompilerContext(object):
         self.data.append(chr(bc))
         self.data.append(chr(arg))
 
+    def size(self):
+        return len(self.data)
+
+
     def create_bytecode(self, offset=0):
         if offset != 0:
             for idx, v in enumerate(self.data):
@@ -53,6 +71,7 @@ class CompilerContext(object):
                     self.data[idx] += offset
 
         return ByteCode("".join(self.data), self.constants[:], len(self.names))
+
 
 class ByteCode(object):
     '''
@@ -64,6 +83,17 @@ class ByteCode(object):
         self.constants = constants
         self.numvars = numvars
 
+    def merge(self, cc):
+        '''
+        merge with another bytecode object.
+        return offset(pc) where bytecode were inserted,
+        if you want to keep some kind of address reference.
+        '''
+        a = len(self.code)
+        self.code += cc.code
+        return a
+
+
     def dump(self):
         lines = []
         i = 0
@@ -72,6 +102,12 @@ class ByteCode(object):
             c2 = self.code[i + 1]
             lines.append(bytecodes_by_value[ord(c)] + " " + str(ord(c2)))
         return '\n'.join(lines)
+
+
+def compile_partial(astnode):
+    c = CompilerContext()
+    astnode.compile(c)
+    return c
 
 def compile_ast(astnode, offset=0):
     c = CompilerContext()

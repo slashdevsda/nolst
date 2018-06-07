@@ -63,7 +63,7 @@ class W_StringObject(W_Root):
 
 class W_LambdaObject(W_Root):
     '''
-    used for lambda
+    used for lambda.
     '''
     def __init__(self, args, body):
         #assert(isinstance(strval, str))
@@ -80,7 +80,7 @@ class W_LambdaObject(W_Root):
         return True
 
     def str(self):
-        return str(self.args) + str(self.body) + "\n\t\targs:>\n%s\n\t\tbody>\n%s" %(self.args.dump(), self.body.dump())
+        return str(self.args) + str(self.body) + "\n\t\targs:>\n%s\n\t\tbody>\n%s" %(self.args, self.body)
 
 
 class W_SymbolObject(W_Root):
@@ -287,11 +287,15 @@ def execute(frame, bc):
         elif c == bytecode.LOAD_VAR:
             frame.push(frame.vars[arg])
 
-        #elif c == 'bytecode.JUMP':
-        # # takes adress as arg.
-        # # wild.
+        elif c == bytecode.RJUMP:
+            # takes relative adress as arg.
+            # wild.
+            pc += arg
 
-        #elif c == 'bytecode.LOAD_FUNCTION':
+        elif c == 'bytecode.LOAD_FUNCTION':
+            # happen at the end of a function occuring in bytecode.
+            # in this case,
+            pass
         # play with pc
         #elif c == 'bytecode.CALL':
 

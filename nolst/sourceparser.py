@@ -55,13 +55,18 @@ class Lambda(Node):
         from nolst.interpreter import W_LambdaObject
 
 
+        a_unit = bytecode.compile_partial(self.args)
+        b_unit = bytecode.compile_partial(self.body)
+        ctx.emit(bytecode.RJUMP, a_unit.size() + b_unit.size())
 
 
         w = W_LambdaObject(
-            ctx.merge(bytecode.compile_ast(self.args)),
-            ctx.merge(bytecode.compile_ast(self.body))
+            ctx.merge(a_unit),
+            ctx.merge(b_unit)
         )
+
         ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(w))
+
         #self.args.compile(ctx)
         #self.body.compile(ctx)
         # ctx.emit(bytecode.RETURN, 0)
@@ -243,6 +248,7 @@ class Transformer(object):
     def visit_main(self, node):
         return self.dispatch(node)
 
+
     def visit_atom(self, node):
         if node.children[0].symbol == 'DECIMAL':
             return ConstantInt(int(node.children[0].token.source))
@@ -252,6 +258,7 @@ class Transformer(object):
             #assert len(node.children[0].token.source) > 2
             return ConstantString(node.children[0].token.source.rstrip('"'))
         raise NotImplementedError()
+
 
     def dispatch(self, node):
         if node.symbol == 'atom':
@@ -263,6 +270,11 @@ class Transformer(object):
         elif node.symbol == 'root':
             return self.visit_root(node)
 
+        # terminals
+        elif node.symbol == 'DECIMAL':
+            return ConstantInt(int(node.token.source))
+
+        print node.symbol
         raise NotImplementedError()
 
     def visit_root(self, node):
@@ -290,7 +302,10 @@ class Transformer(object):
                 t = item.children[0].token.name
                 l.append(UnevaluatedSymbol(item.children[0].token.name))
             else:
-                raise NotImplementedError(item)
+                # we evaluate item since it may be resolved
+                #return item
+                l.append(UnevaluatedSymbol(item.token.name))
+                #raise NotImplementedError(item)
 
 
         return QuotedExpr(l)
@@ -306,7 +321,6 @@ class Transformer(object):
             if c.children[0].token.source == 'def':
                 # var definition
                 # TODO
-                print('VAR DEF')
                 expr.append(
                     Assignment(
                         node.children[1].children[0].token.source,
@@ -321,7 +335,10 @@ class Transformer(object):
             elif c.children[0].token.source == 'lambda':
                 #c = [self.dispatch(i) for i in node.children[1:]]
                 expr.append(
-                    Lambda(self.dispatch(node.children[1]), self.dispatch(node.children[2]))
+                    Lambda(
+                        self.visit_func_args(node.children[1]),
+                        self.visit_func_body(node.children[2])
+                    )
                 )
             elif c.children[0].token.source == 'add':
                 # addition
@@ -329,20 +346,45 @@ class Transformer(object):
                     BinOp(
                         '+',
                         self.dispatch(node.children[1]),
-                        self.dispatch(node.children[2]))
+                        self.dispatch(node.children[2])
+                    )
                 )
             elif c.children[0].token.source == 'print':
                 expr.append(Print(self.dispatch(node.children[1])))
             else:
-                cc = [self.dispatch(i) for i in node.children]
-                expr.append(
-                    Do(cc)
-                )
+                # this is a function call
+                # funcname: c.children[0].token.source
+                # arguments: c.children[0].token.source
+                #cc = [self.dispatch(i) for i in node.children]
+                #expr.append(
+                #    Do(cc)
+                #)
+                print(c.children[0].token.source)
+                raise NotImplementedError()
 
             #print(c.children[0].token.source)
             #expr.append(c.children[0].token)
 
         return Sexpr(expr)
+
+
+    def visit_func_args(self, node):
+        '''
+        we handle function body
+        as an unevaluated (quoted) expression.
+        '''
+        #return self.visit_qsexpr(node)
+        return Do([])
+
+    def visit_func_body(self, node):
+        '''
+
+        '''
+        return self.visit_sexpr(node)
+        #cc = [self.dispatch(i) for i in node.children]
+        #print(cc)
+        return Do(cc)
+
 
 
 transformer = Transformer()
