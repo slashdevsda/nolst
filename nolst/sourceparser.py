@@ -23,7 +23,9 @@ class Sexpr(Node):
         self.stmts = stmts
 
     def compile(self, ctx):
+        print('\n===')
         for stmt in self.stmts:
+            print('smtm:', stmt)
             stmt.compile(ctx)
 
 
@@ -43,6 +45,7 @@ class Do(Node):
 
 class Lambda(Node):
     """ An annonymous function
+    handled like a variable
     """
     def __init__(self, args, body):
         self.args = args
@@ -54,22 +57,46 @@ class Lambda(Node):
         #ctx.emit(bytecode.JUMP_IF_FALSE, 2)
         from nolst.interpreter import W_LambdaObject
 
-
-        a_unit = bytecode.compile_partial(self.args)
-        b_unit = bytecode.compile_partial(self.body)
-        ctx.emit(bytecode.RJUMP, a_unit.size() + b_unit.size())
-
-
-        w = W_LambdaObject(
-            ctx.merge(a_unit),
-            ctx.merge(b_unit)
+        # write RJUMP first
+        rjm_addr = ctx.emit(
+            bytecode.AJUMP,
+            0
+            #a_unit.size() + b_unit.size() + 2 #+ len(self.args.stmts) * 2
         )
 
-        ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(w))
 
+        a_unit = bytecode.compile_partial(self.args, ctx)
+        b_unit = bytecode.compile_partial(self.body, ctx)
+        # + 2 is for the last BACK
+        # len(self.args.stmts) * 2 is for cleanup bytecode (arguments unbind)
+
+        # compile the lambda object right
+        #a_unit = bytecode.compile_partial(self.args, ctx)
+        #b_unit = bytecode.compile_partial(self.body, ctx)
         #self.args.compile(ctx)
         #self.body.compile(ctx)
-        # ctx.emit(bytecode.RETURN, 0)
+
+        w = W_LambdaObject(
+            rjm_addr + 2 ,
+            rjm_addr + 2 + a_unit.size()
+        )
+        print("pwet:",w.str())
+        ctx.hotfix_inst_arg(rjm_addr, ctx.size() + 2)
+
+        # cleanup code
+        #for item in self.args.stmts:
+        #    item.compile_cleanup(ctx)
+
+        # return from were we came
+        ctx.emit(bytecode.BACK)
+        # instruction to load function on the stack?
+        ctx.emit(bytecode.LOAD_FUNCTION, ctx.register_lambda(w))
+
+    #def __init__(self, varname):
+    #    self.varname = varname
+
+    #def compile(self, ctx):
+    #    ctx.emit(bytecode.LOAD_VAR, ctx.register_var(self.varname))
 
 
 class Stmt(Node):
@@ -130,6 +157,34 @@ class ConstantFloat(Node):
         from nolst.interpreter import W_FloatObject
         w = W_FloatObject(self.floatval)
         ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(w))
+
+
+class FuncCall(Node):
+    """ A function call
+    """
+    def __init__(self, fname, arguments=[]):
+        print(fname)
+        #exit(0)
+        self.function_name = fname
+        self.args = arguments
+
+    def compile(self, ctx):
+
+        for a in self.args:
+            a.compile(ctx)
+            #ctx.emit(bytecode.LOAD_VAR, a)
+
+        #faddr = ctx.function_addr(self.function_name)
+        #if faddr < 1:a
+        #    raise Error()
+
+        # load function var
+        self.function_name.compile(ctx)
+        #ctx.emit(bytecode.LOAD_CONSTANT, self.function_name)
+        ctx.emit(bytecode.CALL)
+
+
+
 
 class BinOp(Node):
     """ A binary operation
@@ -202,9 +257,14 @@ class Assignment(Node):
         self.varname = varname
         self.expr = expr
 
+    def compile_cleanup(self, ctx):
+        ctx.emit(bytecode.DELETE_VAR, ctx.var_pos(self.varname))
+
     def compile(self, ctx):
-        self.expr.compile(ctx)
+        if self.expr is not None:
+            self.expr.compile(ctx)
         ctx.emit(bytecode.ASSIGN, ctx.register_var(self.varname))
+
 
 class While(Node):
     """ Simple loop
@@ -273,6 +333,9 @@ class Transformer(object):
         # terminals
         elif node.symbol == 'DECIMAL':
             return ConstantInt(int(node.token.source))
+
+        elif node.symbol == 'SYMBOL':
+            return Variable(node.token.source)
 
         print node.symbol
         raise NotImplementedError()
@@ -355,12 +418,14 @@ class Transformer(object):
                 # this is a function call
                 # funcname: c.children[0].token.source
                 # arguments: c.children[0].token.source
-                #cc = [self.dispatch(i) for i in node.children]
-                #expr.append(
-                #    Do(cc)
-                #)
-                print(c.children[0].token.source)
-                raise NotImplementedError()
+                #
+                print('funccal: ' + str(node.children[1:]))
+                expr.append(
+                    FuncCall(
+                        Variable(c.children[0].token.source), #.token.source,
+                        [self.dispatch(i.children[0]) for i in (node.children[1:] if len(node.children) + 1 > 0 else [])]
+                    )
+                )
 
             #print(c.children[0].token.source)
             #expr.append(c.children[0].token)
@@ -370,11 +435,17 @@ class Transformer(object):
 
     def visit_func_args(self, node):
         '''
-        we handle function body
-        as an unevaluated (quoted) expression.
+        handle a function definition argument's ast
+        eg:
+        (lambda (x y) (add x y))
+        -> the AST resulting to `(x y)` (agument declaration)
+        will be passed to this function.
+
+        We'll generate `ASSIGN` bytecode here - values
+        are waiting on the stack.
+        `ASSIGN` stores TOS into vars[var_num].
         '''
-        #return self.visit_qsexpr(node)
-        return Do([])
+        return Do([Assignment(x.children[0].token.source, None) for x in node.children])
 
     def visit_func_body(self, node):
         '''

@@ -24,7 +24,7 @@ class W_IntObject(W_Root):
 
     def add(self, other):
         if not isinstance(other, W_IntObject):
-            raise Exception("wrong type")
+            raise Exception("wrong type: %s" %str(other))
         return W_IntObject(self.intval + other.intval)
 
     def lt(self, other):
@@ -80,7 +80,7 @@ class W_LambdaObject(W_Root):
         return True
 
     def str(self):
-        return str(self.args) + str(self.body) + "\n\t\targs:>\n%s\n\t\tbody>\n%s" %(self.args, self.body)
+        return "Lambda(args:%s body:%s)" %(self.args, self.body)
 
 
 class W_SymbolObject(W_Root):
@@ -180,6 +180,41 @@ class W_QuotedListObject(W_Root):
         return '(%s)' %', '.join([str(i) for i in self.content])
 
 
+class Locals(object):
+    '''
+    '''
+    _virtualizable_ = ['valuestack[*]', 'valuestack_pos', 'vars[*]']
+
+    def __init__(self, entry_addr, return_addr):
+        self = jit.hint(self, fresh_virtualizable=True, access_directly=True)
+        self.entry_addr = entry_addr
+        self.return_addr = return_addr
+        self.valuestack = [None] * 5
+        # safe estimate! no more 5 arguments to a local
+        # context
+        self.vars = [None] * bc.numvars
+        self.valuestack_pos = 0
+        self.vars = []
+
+
+    def get_var(self, idx):
+        pos = jit.hint(self.valuestack_pos, promote=True)
+        new_pos = pos - 1
+        assert new_pos >= 0
+        v = self.valuestack[new_pos]
+        self.valuestack_pos = new_pos
+        return v
+
+
+    def dump(self):
+        b = ''
+        for i, v in enumerate(self.vars):
+            if v:
+                b += '%s: %s\n' %(hex(i), v.str())
+        return b
+
+
+
 class Frame(object):
     _virtualizable_ = ['valuestack[*]', 'valuestack_pos', 'vars[*]']
 
@@ -188,6 +223,11 @@ class Frame(object):
         self.valuestack = [None] * 10 # safe estimate!
         self.vars = [None] * bc.numvars
         self.valuestack_pos = 0
+        self.lambdas = bc.lambdas
+
+    def load_lambda(self, name):
+        return self.lambdas[name]
+
 
     def dump_vars(self):
         b = ''
@@ -200,9 +240,9 @@ class Frame(object):
         b = ''
 
         for i, _ in enumerate(self.valuestack):
-            if self.valuestack[i]:
+            if self.valuestack[i] or i == self.valuestack_pos:
                 b += "%s:\t%s" %(hex(i), self.valuestack[i])
-                if i == self.valuestack_pos:
+                if i == self.valuestack_pos - 1:
                     b += ' <---'
                 b += '\n'
 
@@ -239,6 +279,9 @@ def execute(frame, bc):
     execute bytecode `bc.code`.
     `frame` represents the stack
     '''
+
+    # rec is used for function call return addr
+    rec = []
     code = bc.code
     pc = 0
     while True:
@@ -251,10 +294,9 @@ def execute(frame, bc):
         if DEBUG:
             # DEBUG, dump everyting for each opcodes
             print(
-                'INSTRUCTION: %s(ARG:%s)\n=== STACK DUMP ===\n%s'
-                %(bytecode.bytecodes_by_value[c], hex(arg) if arg else 'NO_ARG', frame.dump_stack())
+                'INSTRUCTION: %s(ARG:%s) @%d\n'
+                %(bytecode.bytecodes_by_value[c], hex(arg) if arg else 'NO_ARG', pc)
             )
-            print('=== VARS DUMP ===\n%s' %frame.dump_vars())
 
         if c == bytecode.LOAD_CONSTANT:
             w_constant = bc.constants[arg]
@@ -283,25 +325,54 @@ def execute(frame, bc):
             item = frame.pop()
             print('(nolst) ' + item.str())
         elif c == bytecode.ASSIGN:
+            # assign the top of the stack
+            # to the next free variable slot
+            frame.vars[arg] = frame.pop()
+        elif c == bytecode.DELETE_VAR:
             frame.vars[arg] = frame.pop()
         elif c == bytecode.LOAD_VAR:
+            # load variable TOS
             frame.push(frame.vars[arg])
+
+        elif c== bytecode.AJUMP:
+            # takes absolute adress as arg.
+            pc = arg
 
         elif c == bytecode.RJUMP:
             # takes relative adress as arg.
             # wild.
             pc += arg
 
-        elif c == 'bytecode.LOAD_FUNCTION':
-            # happen at the end of a function occuring in bytecode.
-            # in this case,
-            pass
-        # play with pc
-        #elif c == 'bytecode.CALL':
+        elif c == bytecode.LOAD_FUNCTION:
+            # load function/lambda on the stack
+            l = frame.load_lambda(arg)
+            frame.push(l)
 
+        # play with pc
+        elif c == bytecode.CALL:
+            rec.append(pc)
+            function = frame.pop()
+
+            pc = function.args
+            print('[CALL]: go to : %d' %pc)
+            print(frame.dump_stack())
+
+            #print('\nFRANE!!!!!  !!!   ! ! ! ! !  ! ' + str(function.args))
+        elif c == bytecode.BACK:
+            # when CALL encountered, the stack should look like this:
+            # [function]
+            # [arg0..]
+            # [..argN]
+            #frame.vars[arg] = frame.pop()
+            pc = rec.pop()
 
         else:
             assert False
+
+        if DEBUG:
+            print('=== STACK DUMP ===\n%s' %frame.dump_stack())
+            print('=== VARS DUMP ===\n%s' %frame.dump_vars())
+
 
 def interpret(source, frame=None):
     parsed = parse(source)
