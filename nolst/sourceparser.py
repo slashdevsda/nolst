@@ -1,6 +1,8 @@
 import py
 from rpython.rlib.parsing.ebnfparse import parse_ebnf, make_parse_function
 from nolst import bytecode
+import os
+VIEW = os.environ.get('NVIEW')
 
 grammar = py.path.local("./nolst/").join('grammar.txt').read("rt")
 regexs, rules, ToAST = parse_ebnf(grammar)
@@ -23,9 +25,7 @@ class Sexpr(Node):
         self.stmts = stmts
 
     def compile(self, ctx):
-        print('\n===')
         for stmt in self.stmts:
-            print('smtm:', stmt)
             stmt.compile(ctx)
 
 
@@ -52,44 +52,50 @@ class Lambda(Node):
         self.body = body
 
     def compile(self, ctx):
-        #for arg in self.args:
-        #    ctx.emit(bytecode.LOAD_VAR, ctx.register_var(self.arg))
-        #ctx.emit(bytecode.JUMP_IF_FALSE, 2)
         from nolst.interpreter import W_LambdaObject
 
-        # write RJUMP first
+        # write RJUMP first.
+        # When "function declaration bytecode" is encountered,
+        # we'll jump over it to skip its execution.
+        #
+        # this bytecode is referenced by a W_LambdaObject,
+        # which represents a firstclass function.
+        # If this W_LambdaObject finds itself on the top
+        # of the stack, and a CALL is encountered,
+        # a JUMP will be done on this bytecode section.
         rjm_addr = ctx.emit(
             bytecode.AJUMP,
             0
-            #a_unit.size() + b_unit.size() + 2 #+ len(self.args.stmts) * 2
+            # we don't know the size of the
+            # function yet, so we'll put 0
         )
 
 
         a_unit = bytecode.compile_partial(self.args, ctx)
         b_unit = bytecode.compile_partial(self.body, ctx)
-        # + 2 is for the last BACK
-        # len(self.args.stmts) * 2 is for cleanup bytecode (arguments unbind)
 
-        # compile the lambda object right
-        #a_unit = bytecode.compile_partial(self.args, ctx)
-        #b_unit = bytecode.compile_partial(self.body, ctx)
-        #self.args.compile(ctx)
-        #self.body.compile(ctx)
-
+        # compile the lambda object
         w = W_LambdaObject(
             rjm_addr + 2 ,
             rjm_addr + 2 + a_unit.size()
         )
-        print("pwet:",w.str())
+
+        # change the BACK argument (addr),
+        # here we can compute properly
+        # the return offset
         ctx.hotfix_inst_arg(rjm_addr, ctx.size() + 2)
 
-        # cleanup code
-        #for item in self.args.stmts:
-        #    item.compile_cleanup(ctx)
+        # FIXME cleanup code
+        # for item in self.args.stmts:
+        #     item.compile_cleanup(ctx)
 
         # return from were we came
         ctx.emit(bytecode.BACK)
-        # instruction to load function on the stack?
+
+        # instruction to load function on the stack is
+        # following the function bytecode and the BACK instruction.
+        # We'll jump on it when the function bytecode is encountered,
+        # handling function like a variable.
         ctx.emit(bytecode.LOAD_FUNCTION, ctx.register_lambda(w))
 
     #def __init__(self, varname):
@@ -419,7 +425,6 @@ class Transformer(object):
                 # funcname: c.children[0].token.source
                 # arguments: c.children[0].token.source
                 #
-                print('funccal: ' + str(node.children[1:]))
                 expr.append(
                     FuncCall(
                         Variable(c.children[0].token.source), #.token.source,
@@ -427,7 +432,6 @@ class Transformer(object):
                     )
                 )
 
-            #print(c.children[0].token.source)
             #expr.append(c.children[0].token)
 
         return Sexpr(expr)
@@ -452,10 +456,6 @@ class Transformer(object):
 
         '''
         return self.visit_sexpr(node)
-        #cc = [self.dispatch(i) for i in node.children]
-        #print(cc)
-        return Do(cc)
-
 
 
 transformer = Transformer()
@@ -467,7 +467,8 @@ def parse(source):
     #print(parsed)
     #parsed.view()
     transformed = ToAST().transform(parsed)
-    transformed.view()
+    if VIEW:
+        transformed.view()
 
     t = transformer.visit_main(transformed)
     return t

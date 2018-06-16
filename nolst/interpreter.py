@@ -265,13 +265,6 @@ class Frame(object):
 def add(left, right):
     return left + right
 
-# if os.environ.get('NDBG'):
-#             # DEBUG, dump everyting for each opcodes
-#             print(
-#                 'CI: %s(%s)\n=== STACK DUMP ===\n%s'
-#                 %(bytecode.bytecodes_by_value[c], hex(arg), frame.dump_stack())
-#             )
-#             print('=== VARS DUMP ===\n%s' %frame.dump_vars())
 
 
 def execute(frame, bc):
@@ -336,34 +329,49 @@ def execute(frame, bc):
 
         elif c== bytecode.AJUMP:
             # takes absolute adress as arg.
+            # wild.
             pc = arg
 
         elif c == bytecode.RJUMP:
             # takes relative adress as arg.
-            # wild.
             pc += arg
 
         elif c == bytecode.LOAD_FUNCTION:
-            # load function/lambda on the stack
+            # load function/lambda object on the stack
             l = frame.load_lambda(arg)
             frame.push(l)
 
         # play with pc
         elif c == bytecode.CALL:
-            rec.append(pc)
-            function = frame.pop()
-
-            pc = function.args
-            print('[CALL]: go to : %d' %pc)
-            print(frame.dump_stack())
-
-            #print('\nFRANE!!!!!  !!!   ! ! ! ! !  ! ' + str(function.args))
-        elif c == bytecode.BACK:
-            # when CALL encountered, the stack should look like this:
+            # save return address then
+            # call a function.
+            #
+            # The function is on the top of
+            # the stack, followed by its arguments.
+            # The function's bytecode is responsible
+            # for popin' out these arguments
+            # and bind them to variables.
+            #  :stack:
             # [function]
             # [arg0..]
             # [..argN]
+
+            rec.append(pc)
+            function = frame.pop()
+            pc = function.args
+
+        elif c == bytecode.BACK:
+            # BACK is a special instruction
+            # that allow an arbitrary jump
+            # after a function call.
+            #
+            # When a CALL is encountered, the bytecode return
+            # address is stored into a list, named `rec`.
+            #
+            # TODO: replace this list by a set
+            # to ignore recursions
             #frame.vars[arg] = frame.pop()
+
             pc = rec.pop()
 
         else:
