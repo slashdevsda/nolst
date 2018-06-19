@@ -8,10 +8,12 @@ bytecodes = {
 
     # relative jump
     'RJUMP':         0x13,
-
+    # absolute jump
+    # with any kind of
+    # restrictions
     'AJUMP':         0x17,
 
-    # back
+    # back (RETURN from function call)
     'BACK':         0x15,
 
     # load a lambda object on the
@@ -137,6 +139,9 @@ class ByteCode(object):
 
 
     def dump(self):
+        '''
+        (debug)
+        '''
         lines = []
         i = 0
         for i in range(0, len(self.code), 2):

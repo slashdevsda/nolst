@@ -178,15 +178,10 @@ class FuncCall(Node):
 
         for a in self.args:
             a.compile(ctx)
-            #ctx.emit(bytecode.LOAD_VAR, a)
 
-        #faddr = ctx.function_addr(self.function_name)
-        #if faddr < 1:a
-        #    raise Error()
 
         # load function var
         self.function_name.compile(ctx)
-        #ctx.emit(bytecode.LOAD_CONSTANT, self.function_name)
         ctx.emit(bytecode.CALL)
 
 
@@ -236,6 +231,8 @@ class QuotedExpr(BaseList):
         from nolst.interpreter import W_QuotedListObject, W_SymbolObject
         obj = W_QuotedListObject(self.content)
         ctx.emit(bytecode.LOAD_CONSTANT, ctx.register_constant(obj))
+        # FIXME:
+        # everything is broken
         for item in self.content:
             #item.compile(ctx)
             pass
@@ -244,6 +241,9 @@ class QuotedExpr(BaseList):
 
 
 class InlineList(BaseList):
+    '''
+    Obviously not implemented
+    '''
     pass
 
 
@@ -358,7 +358,6 @@ class Transformer(object):
         quoted lisp statement. would store bytecode as string
         '''
 
-        #content = self.dispatch(node.children[0])
         l = []
         for n in node.children:
             item = n
@@ -371,12 +370,7 @@ class Transformer(object):
                 t = item.children[0].token.name
                 l.append(UnevaluatedSymbol(item.children[0].token.name))
             else:
-                # we evaluate item since it may be resolved
-                #return item
                 l.append(UnevaluatedSymbol(item.token.name))
-                #raise NotImplementedError(item)
-
-
         return QuotedExpr(l)
 
 
@@ -418,21 +412,32 @@ class Transformer(object):
                         self.dispatch(node.children[2])
                     )
                 )
+            elif c.children[0].token.source in ('lt', '<'):
+                # addition
+                expr.append(
+                    BinOp(
+                        '<',
+                        self.dispatch(node.children[1]),
+                        self.dispatch(node.children[2])
+                    )
+                )
+            elif c.children[0].token.source == 'if':
+                expr.append(
+                    If(
+                        self.dispatch(node.children[1]),
+                        self.dispatch(node.children[2])
+                    )
+                )
             elif c.children[0].token.source == 'print':
                 expr.append(Print(self.dispatch(node.children[1])))
             else:
                 # this is a function call
-                # funcname: c.children[0].token.source
-                # arguments: c.children[0].token.source
-                #
                 expr.append(
                     FuncCall(
-                        Variable(c.children[0].token.source), #.token.source,
+                        Variable(c.children[0].token.source),
                         [self.dispatch(i.children[0]) for i in (node.children[1:] if len(node.children) + 1 > 0 else [])]
                     )
                 )
-
-            #expr.append(c.children[0].token)
 
         return Sexpr(expr)
 

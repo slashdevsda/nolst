@@ -303,6 +303,7 @@ def execute(frame, bc):
             left = frame.pop()
             w_res = left.add(right)
             frame.push(w_res)
+
         elif c == bytecode.BINARY_LT:
             right = frame.pop()
             left = frame.pop()
