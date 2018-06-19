@@ -1,8 +1,9 @@
-IGNORE: "([ \t\n])|;*";
-SYMBOL: "[a-zA-Z_][a-zA-Z0-9_]*";
+IGNORE: "[ \t\n]";
+SYMBOL: "[a-zA-Z_><=][a-zA-Z0-9_><=]*";
 DECIMAL: "-?0|[1-9][0-9]*";
 FLOAT: "-?(0?|[1-9][0-9]*)\.[0-9]+([eE][-+]?[0-9]+)?";
-STRING: "\"[ a-zA-Z_][a-zA-Z0-9_]*\"";
+STRING: "\"[ -a-zA-Z_][a-zA-Z0-9_]*\"";
+COMMENT: ";[; a-zA-Z_][; a-zA-Z0-9_]*";
 
 
 root : sexpr+ [EOF];
@@ -13,61 +14,4 @@ atom: SYMBOL
     | FLOAT
     | STRING;
 
-
-# sexpr:  >atom< | "(" sexpr ")";
-
-# atom: SYMBOL
-#     | DECIMAL
-#     | FLOAT;
-
-## other try:
-##
-
-#list: atom >list< | atom;
-
-#atom: SYMBOL
-#     | DECIMAL
-#     | FLOAT;
-
-#list: ["("] expression* [")"];
-
-# n: "A" ["("] n | "A";
-
-# main: list* [EOF];
-
-# list:   "(" sexpr* ")";
-
-# item: SYMBOL
-#     | DECIMAL
-#     | list
-#     | FLOAT;
-
-
-#seq: expr                  # ->  << [] >>
-#     | expr seq;       # ->  << [expr] + seq >>
-
-
-
-
-# expr: SYMBOL             # ->  << (
-#      | DECIMAL            # ->  <<
-#      | FLOAT            # ->  << (
-#      | list;           # ->  << list >>
-# list:   "(" seq ")";    # ->  << seq >>
-# seq: expr                  # ->  << [] >>
-#      | expr seq;       # ->  << [expr] + seq >>
-
-
-# sexpr: atom
-#     | list
-#     ;
-# list: "(" members ")" #       {printf("matched list\n");}
-#     | "("")"          #      {printf("matched empty list\n");}
-#     ;
-# members: sexpr        #      {printf("members 1\n");}
-#     | sexpr members   #      {printf("members 2\n");}
-#     ;
-# atom: SYMBOL              #      {printf("ID\n");}
-#     | DECIMAL             #      {printf("NUM\n");}
-#     | FLOAT             #      {printf("STR\n");}
-#     ;
+comment: COMMENT;
