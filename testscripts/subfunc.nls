@@ -1,0 +1,15 @@
+
+(def result 12345)
+
+(def myfunc2q
+     (lambda ()
+       (do
+           (def mysubfunc
+                (lambda (x)
+                  (do
+                      (print 666)
+                      (print x))))
+           (mysubfunc result))))
+
+
+(myfunc2q)
